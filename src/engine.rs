@@ -88,6 +88,10 @@ pub enum BackendOp {
         into: PaneHandle,
         opts: SplitOpts,
     },
+    RenamePane {
+        pane: PaneHandle,
+        label: String,
+    },
     Run {
         pane: PaneHandle,
         command: String,
@@ -159,6 +163,10 @@ pub fn execute_plan(plan: &[BackendOp], backend: &mut dyn HerdrBackend) -> Resul
                 let new_id = backend.split_pane(&src, opts)?;
                 ex.panes.insert(into.clone(), new_id);
             }
+            BackendOp::RenamePane { pane, label } => {
+                let id = ex.panes.get(pane).expect("RenamePane unknown handle");
+                backend.rename_pane(id, label)?;
+            }
             BackendOp::Run { pane, command } => {
                 let id = ex.panes.get(pane).expect("Run unknown handle");
                 backend.run(id, command)?;
@@ -211,6 +219,14 @@ fn resolve_split_source(
                 .clone()
         },
     )
+}
+
+/// The `RenamePane` op for a pane's `label`, or `None` when it has no label.
+fn rename_pane_op(pane: &crate::config::Pane, handle: &PaneHandle) -> Option<BackendOp> {
+    pane.label.as_ref().map(|label| BackendOp::RenamePane {
+        pane: handle.clone(),
+        label: label.clone(),
+    })
 }
 
 /// # Panics
@@ -284,6 +300,8 @@ pub fn plan_workspace(ws: &Workspace) -> Vec<BackendOp> {
                 });
                 new_handle
             };
+
+            ops.extend(rename_pane_op(pane, &pane_handle));
 
             let needs_cwd_override = pane.cwd.is_some() || (tab_index == 0 && tab.cwd.is_some());
             let resolved_cwd = if pane_index == 0 && needs_cwd_override {
@@ -389,6 +407,9 @@ pub fn render_op(op: &BackendOp) -> String {
                 " --no-focus"
             });
         }
+        BackendOp::RenamePane { pane, label } => {
+            write!(s, "pane rename {pane:?} --label {}", shell_quote(label)).unwrap();
+        }
         BackendOp::Run { pane, command } => {
             write!(s, "pane run {pane:?} {command}").unwrap();
         }
@@ -450,6 +471,11 @@ mod tests {
 
         fn rename_tab(&mut self, tab_id: &str, label: &str) -> Result<(), BackendError> {
             self.log.push(format!("rename_tab {tab_id} -> {label}"));
+            Ok(())
+        }
+
+        fn rename_pane(&mut self, pane_id: &str, label: &str) -> Result<(), BackendError> {
+            self.log.push(format!("rename_pane {pane_id} -> {label}"));
             Ok(())
         }
 
@@ -641,6 +667,42 @@ mod tests {
                     "create_workspace label=demo focus=false".to_string(),
                     "rename_tab w1:t1 -> editor".to_string(),
                     "run w1:p1 nvim".to_string(),
+                ]
+            );
+        }
+
+        #[test]
+        fn should_thread_pane_ids_into_rename_pane_calls_for_root_and_split_panes() {
+            let plan = vec![
+                BackendOp::CreateWorkspace(WorkspaceOpts {
+                    label: "demo".into(),
+                    cwd: None,
+                    env: BTreeMap::new(),
+                    focus: false,
+                }),
+                BackendOp::RenamePane {
+                    pane: PaneHandle::TabRoot(0),
+                    label: "editor".into(),
+                },
+                BackendOp::SplitPane {
+                    from: PaneHandle::TabRoot(0),
+                    into: PaneHandle::Split(1),
+                    opts: SplitOpts::default(),
+                },
+                BackendOp::RenamePane {
+                    pane: PaneHandle::Split(1),
+                    label: "git".into(),
+                },
+            ];
+            let mut rec = RecordingBackend::default();
+            engine::execute_plan(&plan, &mut rec).unwrap();
+            assert_eq!(
+                rec.log,
+                vec![
+                    "create_workspace label=demo focus=false".to_string(),
+                    "rename_pane w1:p1 -> editor".to_string(),
+                    "split_pane from=w1:p1 -> w1:p2 dir=Right focus=false".to_string(),
+                    "rename_pane w1:p2 -> git".to_string(),
                 ]
             );
         }
@@ -1828,6 +1890,93 @@ mod tests {
         }
 
         #[test]
+        fn should_emit_rename_pane_ops_after_pane_creation_when_panes_have_labels() {
+            let ws = Workspace {
+                name: "demo".to_string(),
+                tabs: vec![Tab {
+                    panes: vec![
+                        Pane {
+                            label: Some("editor".to_string()),
+                            command: Some("nvim".to_string()),
+                            ..Default::default()
+                        },
+                        Pane {
+                            label: Some("git".to_string()),
+                            command: Some("lazygit".to_string()),
+                            ..Default::default()
+                        },
+                    ],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            };
+
+            let plan = engine::plan_workspace(&ws);
+
+            assert_eq!(
+                plan,
+                vec![
+                    BackendOp::CreateWorkspace(WorkspaceOpts {
+                        label: "demo".to_string(),
+                        cwd: None,
+                        env: BTreeMap::new(),
+                        focus: false,
+                    }),
+                    BackendOp::RenamePane {
+                        pane: PaneHandle::TabRoot(0),
+                        label: "editor".to_string(),
+                    },
+                    BackendOp::Run {
+                        pane: PaneHandle::TabRoot(0),
+                        command: "nvim".to_string(),
+                    },
+                    BackendOp::SplitPane {
+                        from: PaneHandle::TabRoot(0),
+                        into: PaneHandle::Split(1),
+                        opts: SplitOpts::default(),
+                    },
+                    BackendOp::RenamePane {
+                        pane: PaneHandle::Split(1),
+                        label: "git".to_string(),
+                    },
+                    BackendOp::Run {
+                        pane: PaneHandle::Split(1),
+                        command: "lazygit".to_string(),
+                    },
+                ]
+            );
+        }
+
+        #[test]
+        fn should_emit_no_rename_pane_ops_when_no_pane_has_a_label() {
+            let ws = Workspace {
+                name: "demo".to_string(),
+                tabs: vec![Tab {
+                    panes: vec![
+                        Pane {
+                            command: Some("nvim".to_string()),
+                            ..Default::default()
+                        },
+                        Pane {
+                            command: Some("lazygit".to_string()),
+                            ..Default::default()
+                        },
+                    ],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            };
+
+            let plan = engine::plan_workspace(&ws);
+
+            assert!(
+                !plan
+                    .iter()
+                    .any(|op| matches!(op, BackendOp::RenamePane { .. }))
+            );
+        }
+
+        #[test]
         #[should_panic(expected = "does not name an earlier pane id")]
         fn should_panic_when_from_references_an_unknown_id_in_an_unvalidated_config() {
             let ws = Workspace {
@@ -1968,6 +2117,17 @@ mod tests {
                     opts: SplitOpts::default(),
                 }),
                 "pane split TabRoot(0) -> Split(1) --direction right --no-focus"
+            );
+        }
+
+        #[test]
+        fn should_render_rename_pane_as_human_readable_line() {
+            assert_eq!(
+                render_op(&BackendOp::RenamePane {
+                    pane: PaneHandle::Split(1),
+                    label: "git".into(),
+                }),
+                "pane rename Split(1) --label 'git'"
             );
         }
 

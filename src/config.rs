@@ -51,6 +51,7 @@ pub struct Tab {
 #[derive(Debug, Default, Clone, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Pane {
+    pub label: Option<String>,
     pub id: Option<String>,
     pub command: Option<String>,
     #[serde(default)]
@@ -198,6 +199,7 @@ fn resolve_workspace_paths(
                     .panes
                     .iter()
                     .map(|pane| Pane {
+                        label: pane.label.clone(),
                         id: pane.id.clone(),
                         command: pane.command.clone(),
                         cwd: pane
@@ -412,6 +414,25 @@ workspaces:
 
         assert_eq!(file.workspaces[0].tabs[0].panes[0].id, None);
         assert_eq!(file.workspaces[0].tabs[0].panes[0].from, None);
+    }
+
+    #[test]
+    fn should_parse_pane_label_and_default_it_to_none_when_omitted() {
+        let yaml = r"
+workspaces:
+  - name: demo
+    tabs:
+      - panes:
+          - label: editor
+            command: nvim
+          - command: lazygit
+";
+
+        let file = SpreadFile::from_str(yaml).unwrap();
+
+        let panes = &file.workspaces[0].tabs[0].panes;
+        assert_eq!(panes[0].label, Some("editor".to_string()));
+        assert_eq!(panes[1].label, None);
     }
 
     #[test]

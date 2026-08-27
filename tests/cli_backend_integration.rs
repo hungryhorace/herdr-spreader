@@ -272,6 +272,70 @@ fn should_split_both_from_panes_off_the_tab_root_pane_against_fake_herdr() {
     let _ = std::fs::remove_file(&log_path);
 }
 
+fn pane_label_log_path() -> PathBuf {
+    PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("fake_herdr_log_pane_labels.txt")
+}
+
+fn build_spread_file_with_pane_labels() -> SpreadFile {
+    SpreadFile {
+        workspaces: vec![Workspace {
+            name: "demo".to_string(),
+            tabs: vec![Tab {
+                label: Some("main".to_string()),
+                panes: vec![
+                    Pane {
+                        label: Some("editor".to_string()),
+                        command: Some("nvim".to_string()),
+                        ..Default::default()
+                    },
+                    Pane {
+                        label: Some("git".to_string()),
+                        command: Some("lazygit".to_string()),
+                        ..Default::default()
+                    },
+                ],
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+    }
+}
+
+#[test]
+fn should_rename_each_labeled_pane_right_after_it_is_created_against_fake_herdr() {
+    let _lock = FAKE_HERDR_LOCK.lock().unwrap();
+    let log_path = pane_label_log_path();
+    let _ = std::fs::remove_file(&log_path);
+
+    unsafe {
+        std::env::set_var("FAKE_HERDR_LOG", &log_path);
+    }
+
+    let file = build_spread_file_with_pane_labels();
+    let mut backend = CliBackend::new(fake_herdr_path(), None);
+
+    engine::apply(&file, &mut backend).expect("apply against fake herdr should succeed");
+
+    let log_contents = std::fs::read_to_string(&log_path).expect("fake herdr log should exist");
+    let logged_lines: Vec<&str> = log_contents.lines().collect();
+
+    // Each labeled pane is renamed with the real pane id herdr returned for
+    // it: the tab's root pane for the first pane, the split's new pane after.
+    let expected_lines = vec![
+        "workspace create --label demo --no-focus",
+        "tab rename wA:t1 main",
+        "pane rename wA:p1 editor",
+        "pane run wA:p1 nvim",
+        "pane split wA:p1 --direction right --no-focus",
+        "pane rename wA:p3 git",
+        "pane run wA:p3 lazygit",
+    ];
+
+    assert_eq!(logged_lines, expected_lines);
+
+    let _ = std::fs::remove_file(&log_path);
+}
+
 #[test]
 fn should_produce_expected_plan_for_two_workspace_fixture_before_execution() {
     let file = build_spread_file();

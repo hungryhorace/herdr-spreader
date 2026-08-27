@@ -51,8 +51,8 @@ JSON
 {"result":{"type":"pane_info","pane":{"pane_id":"wA:p3","tab_id":"wA:t1"}}}
 JSON
         ;;
-      run|focus)
-        # run/focus discard stdout; nothing to emit.
+      run|focus|rename)
+        # run/focus/rename discard stdout; nothing to emit.
         ;;
     esac
     ;;

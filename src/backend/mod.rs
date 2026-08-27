@@ -78,6 +78,13 @@ pub trait HerdrBackend {
         opts: &TabOpts,
     ) -> Result<TabCreated, BackendError>;
 
+    /// Rename an existing pane.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BackendError`] if the underlying command fails.
+    fn rename_pane(&mut self, pane_id: &str, label: &str) -> Result<(), BackendError>;
+
     /// Split an existing pane.
     ///
     /// # Errors

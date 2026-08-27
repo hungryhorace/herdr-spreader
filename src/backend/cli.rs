@@ -97,6 +97,15 @@ pub(crate) fn rename_tab_args(tab_id: &str, label: &str) -> Vec<String> {
     ]
 }
 
+pub(crate) fn rename_pane_args(pane_id: &str, label: &str) -> Vec<String> {
+    vec![
+        "pane".to_string(),
+        "rename".to_string(),
+        pane_id.to_string(),
+        label.to_string(),
+    ]
+}
+
 fn direction_str(direction: SplitDirection) -> &'static str {
     match direction {
         SplitDirection::Right => "right",
@@ -395,6 +404,11 @@ impl HerdrBackend for CliBackend {
         parse_tab_created(&stdout)
     }
 
+    fn rename_pane(&mut self, pane_id: &str, label: &str) -> Result<(), BackendError> {
+        self.exec(&rename_pane_args(pane_id, label))?;
+        Ok(())
+    }
+
     fn split_pane(&mut self, from_pane: &str, opts: &SplitOpts) -> Result<String, BackendError> {
         let stdout = self.exec(&pane_split_args(from_pane, opts))?;
         parse_pane_split(&stdout)
@@ -679,6 +693,13 @@ mod tests {
         let args = rename_tab_args("wA:t1", "editor");
 
         assert_eq!(args, vec!["tab", "rename", "wA:t1", "editor"]);
+    }
+
+    #[test]
+    fn should_build_rename_pane_argv_with_pane_id_and_label() {
+        let args = rename_pane_args("wA:p1", "editor");
+
+        assert_eq!(args, vec!["pane", "rename", "wA:p1", "editor"]);
     }
 
     #[test]

@@ -72,6 +72,7 @@ The one wrinkle: `herdr workspace create` and `herdr tab create` don't just crea
 
 - **A tab's first pane** (`pane_index == 0`) is never created directly — it's the root pane that came back from `create_workspace` (for the first tab) or `create_tab` (for every other tab). There is no `HerdrBackend::create_first_pane` call; it already exists.
 - **Every other pane** is created by `split_pane`, splitting off its source pane: the previous pane in the tab, or — when the pane sets `from: <id>` — the earlier pane that declared that `id`. `plan_workspace` resolves ids to `PaneHandle`s through a per-tab map (`resolve_split_source`); `validate` rejects unknown/forward/duplicate ids before planning ever runs.
+- **A pane with a `label`** additionally gets a `RenamePane` op (`rename_pane_op`) immediately after the op that creates it, so `execute_plan` renames it with the real pane id the backend just returned — mirroring how `RenameFirstTab` names the first tab.
 
 This asymmetry matters because `create_workspace`, `create_tab`, and `split_pane` each accept a `cwd`/`env` at creation time — but a first pane, having no creation call of its own, has no way to receive a pane-specific `cwd` or `env` through the API. The fix (after several review rounds got this wrong — see [History of the cwd/env bug](#history-of-the-cwden-bug)) is: when a first pane needs a `cwd` or `env` beyond what its workspace/tab baseline already gives it, `engine.rs` prefixes its `run` command with a shell snippet:
 

@@ -51,6 +51,7 @@ $ herdr-spreader apply
 - **Declarative YAML layouts** — describe tabs and panes once, apply them as many times as you want.
 - **Nested pane splits** — split panes `right` or `down` with an optional `ratio`, chained from the previous pane by default, so you can build arbitrarily deep layouts.
 - **Branching layouts** — give a pane an `id` and split other panes `from` it to branch off any earlier pane instead of chaining, so layouts like an editor column with a full-height sidebar, or a 2×2 grid, are expressible (see [Branching layouts](#branching-layouts)).
+- **Named tabs and panes** — `label` a tab or a pane and the name shows up in herdr's UI.
 - **Per-pane and per-tab working directories** — set a `root` for the whole layout and override it per tab or per pane; relative paths resolve against their parent, `~` expands to your home directory.
 - **Environment variables at every level** — set env vars for the whole workspace or scope them to a single pane.
 - **Startup commands with synchronization** — run a command in each pane, and optionally `wait_for` a pattern in its output (with a timeout) before moving on — handy for "don't run the tests until the dev server says it's ready."
@@ -139,7 +140,8 @@ A layout file has four levels: the **file** (top level), **workspaces**, **tabs*
 
 | Key | Type | Description |
 |---|---|---|
-| `id` | string | Name for this pane, so a later pane in the same tab can split `from` it. Must be non-empty and unique within its tab (the same id may be reused in other tabs). |
+| `label` | string | Display name for the pane, applied with `herdr pane rename` right after the pane is created. Independent of `id` — `label` is what you see in the UI, `id` is what other panes reference. |
+| `id` | string | Name for this pane, so a later pane in the same tab can split `from` it. Must be non-empty and unique within its tab (the same id may be reused in other tabs). Not shown anywhere — use `label` to name the pane visibly. |
 | `command` | string | Shell command to run in this pane once it's created. |
 | `cwd` | path | Working directory for this pane, relative to the tab's `cwd` (and, transitively, `root`) unless it starts with `~` or `/`. |
 | `env` | map of string→string | Environment variables scoped to this pane. |
@@ -201,7 +203,7 @@ Paths compose top-down: `root` → tab `cwd` → pane `cwd`, each relative overr
 
 1. `herdr workspace create` — creates the workspace and its first tab/pane (with `--focus` if the first pane or the workspace is marked for focus).
 2. For each subsequent tab, `herdr tab create` — creates a new tab (with `--focus` if the first pane in that tab is marked).
-3. For each pane after the first in a tab, `herdr pane split` — splits off a new pane in the requested direction from its source pane (the previous pane, or the pane named by `from`), with `--focus` if that pane is marked.
+3. For each pane after the first in a tab, `herdr pane split` — splits off a new pane in the requested direction from its source pane (the previous pane, or the pane named by `from`), with `--focus` if that pane is marked. Panes with a `label` are then named via `herdr pane rename` (the tab's first pane included).
 4. `herdr pane run` — runs the configured command in each pane. A tab's or workspace's first pane can't be created with a working directory or environment variables the way split panes can, so `herdr-spreader` prefixes the command with `cd <dir> && export KEY=VAL && ...` for those panes.
 5. `herdr wait output` — for panes with `wait_for`, blocks until the pattern appears before continuing.
 
